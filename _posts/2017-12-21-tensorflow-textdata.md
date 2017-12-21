@@ -1,7 +1,7 @@
 ---
 layout: post
 title: Feeding text data in Tensorflow
-tags: 'tf.data' 'tensorflow' 'TextLineDataset'
+tags: tf.data tensorflow TextLineDataset
 ---
 
 In this post, we will look at how to **convert text data into a tensor**. [`tf.data`](https://www.tensorflow.org/programmers_guide/datasets) is the [recommended method](https://www.tensorflow.org/api_guides/python/threading_and_queues) to feed data to your tensorflow model and is [now core part](https://github.com/tensorflow/tensorflow/blob/master/RELEASE.md) of [tensorflow](https://www.tensorflow.org).
