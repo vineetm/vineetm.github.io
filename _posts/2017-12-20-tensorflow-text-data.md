@@ -1,8 +1,9 @@
 ---
 layout: post
-title:
-tags:
+title: Feeding text data in Tensorflow
+tags: tf.data tensorflow TextLineDataset
 ---
+
 In this post, we will look at how to **convert text data into a tensor**. [`tf.data`](https://www.tensorflow.org/programmers_guide/datasets) is the [recommended method](https://www.tensorflow.org/api_guides/python/threading_and_queues) to feed data to your tensorflow model and is [now core part](https://github.com/tensorflow/tensorflow/blob/master/RELEASE.md) of [tensorflow](https://www.tensorflow.org).
 
 Some tensorflow developers might find this strange. Why do we need this `tf.data`? Isn't creating [placeholders](https://www.tensorflow.org/api_docs/python/tf/placeholder) and `feed_dict` the way to do it? Well, you can certainly use feed_dict, but that requires you to completely pre-process your data, write a separate batching function. Also,`feed_dict` [does not scale well](https://www.tensorflow.org/performance/performance_guide).
@@ -131,7 +132,7 @@ Notice that shape of tokens part is **32x50** (`batch_size` x maximum tokens in 
 Go ahead and try by calling iterator another time (Copy `sentences = sess...` line below!). This basically would return the second batch. What is the maximum length of sentence that you see? You might want to check the [notebook](https://github.com/vineetm/tensorflow-notes/blob/master/dataset/notebooks/tf-text-data-allcode.ipynb) for the correct answer.
 
 ### Deep Dive
-If all the code above seems hurried (Well, it should!), here is a more slow paced explanation. As before, there is also a [notebook][Link!] where you get to run (and modify) the code to your heart's content!
+If all the code above seems hurried (Well, it should!), here is a more slow paced explanation. As before, there is also a [notebook](https://github.com/vineetm/tensorflow-notes/blob/master/dataset/notebooks/tf-text-data.ipynb) where you get to run (and modify) the code to your heart's content!
 
 #### Step 1: Data iterator for text
 Lets us take a step back, and see concretely how iterator works
@@ -175,7 +176,7 @@ dataset = dataset.map(lambda sentence: tf.string_split([sentence]).values)
 iterator = dataset.make_initializable_iterator()
 ```
 
-Okay, so what would be expect now?
+Okay, so what would be expect now? Note, there is no change in the code below!
 ```python
 with tf.Session() as sess:
     sess.run(iterator.initializer)
@@ -187,3 +188,78 @@ with tf.Session() as sess:
  b'headline']
 
  That's right, a list of tokens!!  
+
+#### Step 3: Lookup Table, and list of token *integers*
+OK, so we have made some progress. We know how to create an iterator, and how to return a list of tokens.
+
+To convert tokens (strings) to integers, we need a lookup table. Think of lookup table as a dictionary, which returns a unique index for each token (And a default index for out of vocabulary words)
+
+```python
+from tensorflow.python.ops import lookup_ops
+
+# Returns a lookup op, which will convert a string to integer, as per vocab_file.
+# By default this returns 0 (Look at what is first line of vocab_file)
+vocab_table = lookup_ops.index_table_from_file(vocab_file, default_value=0)
+```
+So, the above code creates the dictionary (dictionary operator, not python dictionary!) such that we can convert a token (string) to integer.
+```python
+dataset = tf.data.TextLineDataset(sentences_file)
+dataset = dataset.map(lambda sentence: tf.string_split([sentence]).values)
+
+dataset = dataset.map(lambda words: vocab_table.lookup(words))
+iterator = dataset.make_initializable_iterator()
+```
+
+And, what would be expect now?
+```python
+with tf.Session() as sess:
+    sess.run(iterator.initializer)
+
+    sentence = sess.run(iterator.get_next())
+    print(sentence)
+```
+> [ 3  0  4  5  6  7  8  9 10]
+
+We, finally have integers!!!!
+
+#### Step 4: Append length of sentence (aka number of tokens)
+
+Why would we need to append number of tokens. Well, text is interesting. Not all sentences are of same length. Thus if we are considering batching them together, we need to know where sentence ends. Useful for [`dynamic_rnn`](https://www.tensorflow.org/api_docs/python/tf/nn/dynamic_rnn).
+
+```python
+dataset = tf.data.TextLineDataset(sentences_file)
+dataset = dataset.map(lambda sentence: tf.string_split([sentence]).values)
+dataset = dataset.map(lambda words: vocab_table.lookup(words))
+
+#We can compute length at runtime using tf.size
+dataset = dataset.map(lambda words: (words, tf.size(words)))
+
+iterator = dataset.make_initializable_iterator()
+```
+
+#### Final Step: Batching
+This step involves grouping sentences together. This is where `tf.data` comes really handy, as it takes care of batching for you.
+
+```python
+dataset = tf.data.TextLineDataset(sentences_file)
+dataset = dataset.map(lambda sentence: tf.string_split([sentence]).values)
+dataset = dataset.map(lambda words: vocab_table.lookup(words))
+
+
+dataset = dataset.map(lambda words: (words, tf.size(words)))
+
+#First argument tells us what is size of batch. [None] says this is vectors of unknown size
+dataset = dataset.padded_batch(32, padded_shapes=(tf.TensorShape([None]), tf.TensorShape([])))
+iterator = dataset.make_initializable_iterator()
+```
+
+You execute it in same fashion. But get a batch of sentences now.
+```python
+with tf.Session() as sess:
+    sess.run(iterator.initializer)
+    sess.run(tf.tables_initializer())
+
+    #This is now a tuple. Where [0] is sentence [1] is length
+    sentences = sess.run(iterator.get_next())
+  print(len(sentences[0]), len(sentences[1]))
+```
